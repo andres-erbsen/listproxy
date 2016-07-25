@@ -48,9 +48,9 @@ func getMoiraNFSGroupMembers(nfsgroup string) ([]string, error) {
 
 var deprecatedRSAIncEmailAddressForUseInSignatures = asn1.ObjectIdentifier{1, 2, 840, 113549, 1, 9, 1}
 
-func getMITCertEmailAddress(chains [][]*x509.Certificate) (string, error) {
+func getMITCertEmailAddressFullName(chains [][]*x509.Certificate) (string, string, error) {
 	if len(chains) == 0 {
-		return "", errors.New("no verified certificate chains")
+		return "", "", errors.New("no verified certificate chains")
 	}
 	for _, chain := range chains {
 		if len(chain) == 0 {
@@ -62,11 +62,11 @@ func getMITCertEmailAddress(chains [][]*x509.Certificate) (string, error) {
 				continue
 			}
 			if email, ok := name.Value.(string); ok {
-				return email, nil
+				return email, cert.Subject.CommonName, nil
 			}
 		}
 	}
-	return "", errors.New("no MIT certificate email address found")
+	return "", "", errors.New("no MIT certificate email address found")
 }
 
 func run(authenticate, authorize, proxy, state string) {
@@ -89,11 +89,8 @@ func run(authenticate, authorize, proxy, state string) {
 	if !clientCAs.AppendCertsFromPEM(clientCAsPEM) {
 		log.Fatalf("failed to parse client CA certificate")
 	}
-	checkAuthorization := func(req *http.Request) error {
-		email, err := getMITCertEmailAddress(req.TLS.VerifiedChains)
-		if err != nil {
-			return err
-		}
+
+	isAuthorized := func (email string) error {
 		email = strings.ToLower(email)
 
 		members, err := getMoiraNFSGroupMembers(authorize)
@@ -122,6 +119,19 @@ func run(authenticate, authorize, proxy, state string) {
 		return fmt.Errorf("authenticated as %q, but not authorized because not on moira list %q", email, authorize)
 	}
 
+	doAuthorize := func(req *http.Request) error {
+		email, fullname, err := getMITCertEmailAddressFullName(req.TLS.VerifiedChains)
+		if err != nil {
+			return err
+		}
+		if err := isAuthorized(email); err != nil {
+			return err
+		}
+		req.Header.Set("proxy-authenticated-full-name", fullname)
+		req.Header.Set("proxy-authenticated-email", strings.ToLower(email))
+		return nil
+	}
+
 	srv := &http.Server{
 		Addr: ":https",
 		TLSConfig: &tls.Config{
@@ -131,7 +141,7 @@ func run(authenticate, authorize, proxy, state string) {
 			ClientAuth: tls.RequireAndVerifyClientCert,
 		},
 		Handler: http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
-			if err := checkAuthorization(req); err == nil {
+			if err := doAuthorize(req); err == nil {
 				reverseProxy.ServeHTTP(w, req)
 			} else {
 				http.Error(w, fmt.Sprint(err), 401)
