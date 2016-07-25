@@ -167,7 +167,7 @@ var state = flag.String("state", "", "path at which the letsencrypt server state
 
 func main() {
 	flag.Parse()
-	if *register == "" || *authenticate == "" || *authorize == "" || *proxy == "" || *state == "" {
+	if *authenticate == "" || *authorize == "" || *proxy == "" || *state == "" {
 		flag.Usage()
 		log.Fatal("please specify the required arguments")
 	}
