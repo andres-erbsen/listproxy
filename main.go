@@ -69,7 +69,7 @@ func getMITCertEmailAddressFullName(chains [][]*x509.Certificate) (string, strin
 	return "", "", errors.New("no MIT certificate email address found")
 }
 
-func run(register, listen, authenticate, authorize, proxy, state string) {
+func run(register, listenhttp, listenhttps, authenticate, authorize, proxy, state string) {
 	dst, err := url.Parse(proxy)
 	if err != nil {
 		log.Fatalf("parse proxy url: %v", err)
@@ -139,7 +139,7 @@ func run(register, listen, authenticate, authorize, proxy, state string) {
 	}
 
 	srv := &http.Server{
-		Addr: listen + ":https",
+		Addr: listenhttps,
 		TLSConfig: &tls.Config{
 			GetCertificate: letsEncryptManager.GetCertificate,
 
@@ -155,12 +155,13 @@ func run(register, listen, authenticate, authorize, proxy, state string) {
 		}),
 	}
 
-	go func() { log.Fatal(http.ListenAndServe(listen+":http", http.HandlerFunc(letsencrypt.RedirectHTTP))) }()
+	go func() { log.Fatal(http.ListenAndServe(listenhttp, http.HandlerFunc(letsencrypt.RedirectHTTP))) }()
 	log.Fatal(srv.ListenAndServeTLS("", ""))
 }
 
 var register = flag.String("register", "", "(optional) email address for letsencrypt registration")
-var listen = flag.String("listen", "", "address to listen on (default:all)")
+var listenhttp = flag.String("listenhttp", ":http", "host:port to listen for HTTP on")
+var listenhttps = flag.String("listenhttps", ":https", "host:port to listen for HTTPS on")
 var authenticate = flag.String("authenticate", "", "path to a file containing PEM-format x509 certificates for the CAs trusted to authenticate clients")
 var authorize = flag.String("authorize", "", "name of moira list whose members are authorized. The list MUST be marked as a NFS group (blanche listname -N)")
 var proxy = flag.String("proxy", "", "URL to the service to be reverse-proxied")
@@ -172,5 +173,5 @@ func main() {
 		flag.Usage()
 		log.Fatal("please specify the required arguments")
 	}
-	run(*register, *listen, *authenticate, *authorize, *proxy, *state)
+	run(*register, *listenhttp, *listenhttps, *authenticate, *authorize, *proxy, *state)
 }
