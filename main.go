@@ -50,7 +50,7 @@ var deprecatedRSAIncEmailAddressForUseInSignatures = asn1.ObjectIdentifier{1, 2,
 
 func getMITCertEmailAddressFullName(chains [][]*x509.Certificate) (string, string, error) {
 	if len(chains) == 0 {
-		return "", "", errors.New("no verified certificate chains")
+		return "", "", errors.New("a client certificate is required to use this service, but no verified certificate chains")
 	}
 	for _, chain := range chains {
 		if len(chain) == 0 {
@@ -144,7 +144,7 @@ func run(register, listenhttp, listenhttps, authenticate, authorize, proxy, stat
 			GetCertificate: letsEncryptManager.GetCertificate,
 
 			ClientCAs:  clientCAs,
-			ClientAuth: tls.RequireAndVerifyClientCert,
+			ClientAuth: tls.VerifyClientCertIfGiven,
 		},
 		Handler: http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
 			if err := doAuthorize(req); err == nil {
