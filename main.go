@@ -1,5 +1,7 @@
 package main
 
+import "flag"
+
 import (
 	"crypto/tls"
 	"crypto/x509"
@@ -19,8 +21,9 @@ import (
 
 // nfsgroup MUST match [a-z0-9-] (no LDAP quoting is done)
 func getMoiraNFSGroupMembers(nfsgroup string) ([]string, error) {
-	l, err := ldap.Dial("tcp", "ldap.mit.edu:389")
+	l, err := ldap.DialTLS("tcp", "ldap.mit.edu:636", &tls.Config{ServerName:"ldap.mit.edu"})
 	if err != nil {
+		log.Print(err)
 		return nil, err
 	}
 	defer l.Close()
@@ -34,6 +37,7 @@ func getMoiraNFSGroupMembers(nfsgroup string) ([]string, error) {
 		/*"control"*/ nil,
 	))
 	if err != nil {
+		log.Print(err)
 		return nil, err
 	}
 	if l := len(sr.Entries); l != 1 {
@@ -65,19 +69,19 @@ func getMITCertEmailAddress(chains [][]*x509.Certificate) (string, error) {
 	return "", errors.New("no MIT certificate email address found")
 }
 
-func main() {
-	dst, err := url.Parse("http://127.0.0.1:8080")
+func run(authenticate, authorize, proxy, state string) {
+	dst, err := url.Parse(proxy)
 	if err != nil {
-		log.Fatal(err)
+		log.Fatalf("parse proxy url: %v", err)
 	}
 	reverseProxy := httputil.NewSingleHostReverseProxy(dst)
 
 	var letsEncryptManager letsencrypt.Manager
-	if err := letsEncryptManager.CacheFile("letsencrypt.cache"); err != nil {
+	if err := letsEncryptManager.CacheFile(state); err != nil {
 		log.Fatal(err)
 	}
 
-	clientCAsPEM, err := ioutil.ReadFile("client-certificate-authorities.pem")
+	clientCAsPEM, err := ioutil.ReadFile(authenticate)
 	if err != nil {
 		log.Fatalf("error reading client CAs file: %s", err)
 	}
@@ -85,15 +89,14 @@ func main() {
 	if !clientCAs.AppendCertsFromPEM(clientCAsPEM) {
 		log.Fatalf("failed to parse client CA certificate")
 	}
-	nfsgroup := "andreser-test-nfsgroup-empty"
-	authorize := func(req *http.Request) error {
+	checkAuthorization := func(req *http.Request) error {
 		email, err := getMITCertEmailAddress(req.TLS.VerifiedChains)
 		if err != nil {
 			return err
 		}
 		email = strings.ToLower(email)
 
-		members, err := getMoiraNFSGroupMembers(nfsgroup)
+		members, err := getMoiraNFSGroupMembers(authorize)
 		if err != nil {
 			return err
 		}
@@ -116,7 +119,7 @@ func main() {
 			}
 		}
 
-		return fmt.Errorf("authenticated as %q, but not authorized because not on %q", email, nfsgroup)
+		return fmt.Errorf("authenticated as %q, but not authorized because not on moira list %q", email, authorize)
 	}
 
 	srv := &http.Server{
@@ -128,7 +131,7 @@ func main() {
 			ClientAuth: tls.RequireAndVerifyClientCert,
 		},
 		Handler: http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
-			if err := authorize(req); err == nil {
+			if err := checkAuthorization(req); err == nil {
 				reverseProxy.ServeHTTP(w, req)
 			} else {
 				http.Error(w, fmt.Sprint(err), 401)
@@ -138,4 +141,18 @@ func main() {
 
 	go func() { log.Fatal(http.ListenAndServe(":http", http.HandlerFunc(letsencrypt.RedirectHTTP))) }()
 	log.Fatal(srv.ListenAndServeTLS("", ""))
+}
+
+var authenticate = flag.String("authenticate", "", "path to a file containing PEM-format x509 certificates for the CAs trusted to authenticate clients")
+var authorize = flag.String("authorize", "", "name of moira list whose members are authorized. The list MUST be marked as a NFS group (blanche listname -N)")
+var proxy = flag.String("proxy", "", "URL to the service to be reverse-proxied")
+var state = flag.String("state", "", "path at which the letsencrypt server state will be recorded")
+
+func main() {
+	flag.Parse()
+	if *authenticate == "" || *authorize == "" || *proxy == "" || *state == "" {
+		flag.Usage()
+		log.Fatal("please specify the required arguments")
+	}
+	run(*authenticate, *authorize, *proxy, *state)
 }
