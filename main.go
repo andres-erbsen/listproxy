@@ -82,7 +82,7 @@ func run(register, listen, authenticate, authorize, proxy, state string) {
 	}
 	if register != "" && !letsEncryptManager.Registered() {
 		letsEncryptManager.Register(register, func(terms string) bool {
-			log.Printf("Agreeing to %s ...")
+			log.Printf("Agreeing to %s ...", terms)
 			return true
 		})
 	}
@@ -139,7 +139,7 @@ func run(register, listen, authenticate, authorize, proxy, state string) {
 	}
 
 	srv := &http.Server{
-		Addr: listen+":https",
+		Addr: listen + ":https",
 		TLSConfig: &tls.Config{
 			GetCertificate: letsEncryptManager.GetCertificate,
 
