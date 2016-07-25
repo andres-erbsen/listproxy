@@ -69,7 +69,7 @@ func getMITCertEmailAddressFullName(chains [][]*x509.Certificate) (string, strin
 	return "", "", errors.New("no MIT certificate email address found")
 }
 
-func run(authenticate, authorize, proxy, state string) {
+func run(register, authenticate, authorize, proxy, state string) {
 	dst, err := url.Parse(proxy)
 	if err != nil {
 		log.Fatalf("parse proxy url: %v", err)
@@ -79,6 +79,12 @@ func run(authenticate, authorize, proxy, state string) {
 	var letsEncryptManager letsencrypt.Manager
 	if err := letsEncryptManager.CacheFile(state); err != nil {
 		log.Fatal(err)
+	}
+	if register != "" && !letsEncryptManager.Registered() {
+		letsEncryptManager.Register(register, func(terms string) bool {
+			log.Printf("Agreeing to %s ...")
+			return true
+		})
 	}
 
 	clientCAsPEM, err := ioutil.ReadFile(authenticate)
@@ -153,6 +159,7 @@ func run(authenticate, authorize, proxy, state string) {
 	log.Fatal(srv.ListenAndServeTLS("", ""))
 }
 
+var register = flag.String("register", "", "(optional) email address for letsencrypt registration")
 var authenticate = flag.String("authenticate", "", "path to a file containing PEM-format x509 certificates for the CAs trusted to authenticate clients")
 var authorize = flag.String("authorize", "", "name of moira list whose members are authorized. The list MUST be marked as a NFS group (blanche listname -N)")
 var proxy = flag.String("proxy", "", "URL to the service to be reverse-proxied")
@@ -160,9 +167,9 @@ var state = flag.String("state", "", "path at which the letsencrypt server state
 
 func main() {
 	flag.Parse()
-	if *authenticate == "" || *authorize == "" || *proxy == "" || *state == "" {
+	if *register == "" || *authenticate == "" || *authorize == "" || *proxy == "" || *state == "" {
 		flag.Usage()
 		log.Fatal("please specify the required arguments")
 	}
-	run(*authenticate, *authorize, *proxy, *state)
+	run(*register, *authenticate, *authorize, *proxy, *state)
 }
