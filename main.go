@@ -21,7 +21,7 @@ import (
 
 // nfsgroup MUST match [a-z0-9-] (no LDAP quoting is done)
 func getMoiraNFSGroupMembers(nfsgroup string) ([]string, error) {
-	l, err := ldap.DialTLS("tcp", "ldap.mit.edu:636", &tls.Config{ServerName:"ldap.mit.edu"})
+	l, err := ldap.DialTLS("tcp", "ldap.mit.edu:636", &tls.Config{ServerName: "ldap.mit.edu"})
 	if err != nil {
 		log.Print(err)
 		return nil, err
@@ -96,7 +96,7 @@ func run(register, authenticate, authorize, proxy, state string) {
 		log.Fatalf("failed to parse client CA certificate")
 	}
 
-	isAuthorized := func (email string) error {
+	isAuthorized := func(email string) error {
 		email = strings.ToLower(email)
 
 		members, err := getMoiraNFSGroupMembers(authorize)
